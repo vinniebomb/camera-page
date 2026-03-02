@@ -2,6 +2,7 @@
 <html>
 <head>
   <title>Hand Detection</title>
+  <!-- TensorFlow must load first -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -13,9 +14,24 @@
       width: 100%;
       height: 100%;
     }
+    /* Overlay while model is loading */
+    #loadingOverlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 2em;
+      z-index: 10;
+    }
   </style>
 </head>
 <body>
+
+<div id="loadingOverlay">Loading model...</div>
 
 <video id="input_video" autoplay playsinline></video>
 <canvas id="output_canvas"></canvas>
@@ -24,70 +40,81 @@
 const videoElement = document.getElementById('input_video');
 const canvasElement = document.getElementById('output_canvas');
 const canvasCtx = canvasElement.getContext('2d');
+const loadingOverlay = document.getElementById('loadingOverlay');
 
 let model;
 
-// Load the model ONCE before starting the camera
-async function loadModel() {
+// Initialize everything
+async function init() {
+  // 1️⃣ Load the TensorFlow model ONCE
   model = await tf.loadLayersModel('./model.json');
   console.log("Model loaded!");
-}
-loadModel();
 
-const hands = new Hands({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-});
+  // Remove the loading overlay
+  loadingOverlay.style.display = 'none';
 
-hands.setOptions({
-  maxNumHands: 1,
-  modelComplexity: 1,
-  minDetectionConfidence: 0.7,
-  minTrackingConfidence: 0.7
-});
+  const hands = new Hands({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+  });
 
-hands.onResults(results => {
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
+  });
 
-  canvasCtx.save();
-  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-  canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+  // Throttle predictions to prevent overload (~10 FPS)
+  let lastPredictionTime = 0;
+  const predictionInterval = 100; // ms
 
-  if (results.multiHandLandmarks) {
-    for (const landmarks of results.multiHandLandmarks) {
-      // Draw landmarks
-      drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-      drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+  hands.onResults(async results => {
+    canvasCtx.save();
+    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-      if (model) {
-        const input = [];
-        for (const landmark of landmarks) {
-          input.push(landmark.x, landmark.y, landmark.z);
+    if (results.multiHandLandmarks && model) {
+      for (const landmarks of results.multiHandLandmarks) {
+        // Draw landmarks
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
+        drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
+
+        // Throttle predictions
+        const now = Date.now();
+        if (now - lastPredictionTime > predictionInterval) {
+          lastPredictionTime = now;
+
+          const input = [];
+          for (const l of landmarks) input.push(l.x, l.y, l.z);
+
+          // Async prediction with tf.tidy
+          const resultIndex = await tf.tidy(async () => {
+            const tensor = tf.tensor([input]);
+            const prediction = model.predict(tensor);
+            return (await prediction.argMax(1).data())[0];
+          });
+
+          const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+          console.log("Detected letter:", labels[resultIndex]);
         }
-
-        // Wrap prediction in tf.tidy() to avoid memory leaks
-        const resultIndex = tf.tidy(() => {
-          const tensor = tf.tensor([input]);
-          const prediction = model.predict(tensor);
-          return prediction.argMax(1).dataSync()[0];
-        });
-
-        const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-        console.log("Detected letter:", labels[resultIndex]);
       }
     }
-  }
 
-  canvasCtx.restore();
-});
+    canvasCtx.restore();
+  });
 
-const camera = new Camera(videoElement, {
-  onFrame: async () => {
-    await hands.send({image: videoElement});
-  },
-  width: 1280,
-  height: 720
-});
+  // 3️⃣ Start the camera AFTER model is loaded
+  const camera = new Camera(videoElement, {
+    onFrame: async () => { await hands.send({ image: videoElement }); },
+    width: 1280,
+    height: 720
+  });
 
-camera.start();
+  camera.start();
+}
+
+// Run initialization
+init();
 </script>
 
 </body>
