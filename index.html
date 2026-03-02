@@ -82,7 +82,7 @@ async function init() {
     }
   `], {type:'application/javascript'});
   worker = new Worker(URL.createObjectURL(workerBlob));
-  worker.postMessage({type:'load', inputData:https://vinniebomb.github.io/model-stuff-camera-hand/'});
+  worker.postMessage({type:'load', inputData:'https://vinniebomb.github.io/model-stuff-camera-hand/'});
   worker.onmessage = function(e){
     if(e.data.type==='result'){
       const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
