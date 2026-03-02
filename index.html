@@ -82,13 +82,18 @@ async function init() {
     }
   `], {type:'application/javascript'});
   worker = new Worker(URL.createObjectURL(workerBlob));
-  worker.postMessage({type:'load', inputData:'https://vinniebomb.github.io/model-stuff-camera-hand/'});
+  worker.postMessage({
+  type: 'load',
+  inputData: 'https://vinniebomb.github.io/model-stuff-camera-hand/model.json'
+});
   worker.onmessage = function(e){
-    if(e.data.type==='result'){
-      const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-      letterOverlay.textContent = labels[e.data.index];
-    }
+  if(e.data.type==='loaded'){
+    loadingOverlay.style.display = 'none'; // hide overlay when model is ready
+  } else if(e.data.type==='result'){
+    const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+    letterOverlay.textContent = labels[e.data.index];
   }
+}
 
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
