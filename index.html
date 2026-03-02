@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Hand Detection</title>
-  <!-- TensorFlow must load first -->
+  <!-- TensorFlow + MediaPipe -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -14,49 +14,85 @@
       width: 100%;
       height: 100%;
     }
-    /* Overlay while model is loading */
     #loadingOverlay {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      top:0; left:0;
+      width:100%; height:100%;
       background: rgba(0,0,0,0.8);
-      color: white;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-size: 2em;
-      z-index: 10;
+      color:white;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      font-size:2em;
+      z-index:10;
+    }
+    #letterOverlay {
+      position:absolute;
+      top:10px; left:50%;
+      transform: translateX(-50%);
+      font-size:3em;
+      color:#00FF00;
+      font-weight:bold;
+      z-index:10;
     }
   </style>
 </head>
 <body>
 
 <div id="loadingOverlay">Loading model...</div>
-
+<div id="letterOverlay"></div>
 <video id="input_video" autoplay playsinline></video>
 <canvas id="output_canvas"></canvas>
 
 <script>
+// ===== Main script =====
 const videoElement = document.getElementById('input_video');
 const canvasElement = document.getElementById('output_canvas');
 const canvasCtx = canvasElement.getContext('2d');
 const loadingOverlay = document.getElementById('loadingOverlay');
+const letterOverlay = document.getElementById('letterOverlay');
 
-let model;
+let model; 
+let worker;
 
 // Initialize everything
 async function init() {
-  // 1️⃣ Load the TensorFlow model ONCE
+  // Load TF model once
   model = await tf.loadLayersModel('./model.json');
   console.log("Model loaded!");
-
-  // Remove the loading overlay
   loadingOverlay.style.display = 'none';
+
+  // Start Web Worker for predictions
+  const workerBlob = new Blob([`
+    importScripts('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest');
+    let model;
+    onmessage = async function(e) {
+      const { type, inputData } = e.data;
+      if(type === 'load') {
+        model = await tf.loadLayersModel(inputData);
+        postMessage({ type: 'loaded' });
+      } else if(type === 'predict' && model) {
+        const input = tf.tensor([inputData]);
+        const prediction = model.predict(input);
+        const index = (await prediction.argMax(1).data())[0];
+        input.dispose();
+        prediction.dispose();
+        postMessage({ type: 'result', index });
+      }
+    }
+  `], {type:'application/javascript'});
+  worker = new Worker(URL.createObjectURL(workerBlob));
+  worker.postMessage({type:'load', inputData:'./model.json'});
+  worker.onmessage = function(e){
+    if(e.data.type==='result'){
+      const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+      letterOverlay.textContent = labels[e.data.index];
+    }
+  }
 
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
-
   hands.setOptions({
     maxNumHands: 1,
     modelComplexity: 1,
@@ -64,38 +100,26 @@ async function init() {
     minTrackingConfidence: 0.7
   });
 
-  // Throttle predictions to prevent overload (~10 FPS)
+  // Throttle predictions (~5 FPS)
   let lastPredictionTime = 0;
-  const predictionInterval = 100; // ms
+  const predictionInterval = 200;
 
-  hands.onResults(async results => {
+  hands.onResults(results => {
     canvasCtx.save();
-    canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    canvasCtx.clearRect(0,0,canvasElement.width,canvasElement.height);
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-    if (results.multiHandLandmarks && model) {
-      for (const landmarks of results.multiHandLandmarks) {
-        // Draw landmarks
-        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 4 });
-        drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 2 });
+    if(results.multiHandLandmarks){
+      for(const landmarks of results.multiHandLandmarks){
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color:'#00FF00', lineWidth:4 });
+        drawLandmarks(canvasCtx, landmarks, { color:'#FF0000', lineWidth:2 });
 
-        // Throttle predictions
         const now = Date.now();
-        if (now - lastPredictionTime > predictionInterval) {
+        if(now - lastPredictionTime > predictionInterval){
           lastPredictionTime = now;
-
-          const input = [];
-          for (const l of landmarks) input.push(l.x, l.y, l.z);
-
-          // Async prediction with tf.tidy
-          const resultIndex = await tf.tidy(async () => {
-            const tensor = tf.tensor([input]);
-            const prediction = model.predict(tensor);
-            return (await prediction.argMax(1).data())[0];
-          });
-
-          const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-          console.log("Detected letter:", labels[resultIndex]);
+          const inputData = [];
+          for(const l of landmarks) inputData.push(l.x, l.y, l.z);
+          worker.postMessage({type:'predict', inputData});
         }
       }
     }
@@ -103,17 +127,14 @@ async function init() {
     canvasCtx.restore();
   });
 
-  // 3️⃣ Start the camera AFTER model is loaded
   const camera = new Camera(videoElement, {
-    onFrame: async () => { await hands.send({ image: videoElement }); },
-    width: 1280,
-    height: 720
+    onFrame: async () => { await hands.send({image: videoElement}); },
+    width:1280,
+    height:720
   });
-
   camera.start();
 }
 
-// Run initialization
 init();
 </script>
 
