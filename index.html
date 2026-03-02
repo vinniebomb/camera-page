@@ -38,6 +38,16 @@ hands.setOptions({
 });
 
 hands.onResults(results => {
+
+let model;
+
+async function loadModel() {
+  model = await tf.loadLayersModel('./model.json');
+  console.log("Model loaded!");
+}
+
+loadModel();
+  
   canvasCtx.save();
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
@@ -54,6 +64,24 @@ for (const landmark of landmarks) {
   input.push(landmark.y);
   input.push(landmark.z);
 }
+
+if (model) {
+
+  const prediction = model.predict(tf.tensor([input]));
+  const result = prediction.argMax(1).dataSync()[0];
+
+  const labels = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
+  let detectedLetter = labels[result];
+
+  console.log(detectedLetter);
+
+}
+      
+const prediction = model.predict(
+  tf.tensor([input])
+);
+
+const result = prediction.argMax(1).dataSync()[0];
       
       drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS,
         {color: '#00FF00', lineWidth: 4});
@@ -80,12 +108,5 @@ camera.start();
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
 
-let input = [];
-
-for (const landmark of landmarks) {
-  input.push(landmark.x);
-  input.push(landmark.y);
-  input.push(landmark.z);
-}
 
 
