@@ -46,6 +46,15 @@ hands.onResults(results => {
 
   if (results.multiHandLandmarks) {
     for (const landmarks of results.multiHandLandmarks) {
+
+      let input = [];
+
+for (const landmark of landmarks) {
+  input.push(landmark.x);
+  input.push(landmark.y);
+  input.push(landmark.z);
+}
+      
       drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS,
         {color: '#00FF00', lineWidth: 4});
       drawLandmarks(canvasCtx, landmarks,
@@ -68,3 +77,15 @@ camera.start();
 
 </body>
 </html>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+
+let input = [];
+
+for (const landmark of landmarks) {
+  input.push(landmark.x);
+  input.push(landmark.y);
+  input.push(landmark.z);
+}
+
+
