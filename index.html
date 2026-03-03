@@ -113,13 +113,17 @@ worker.onmessage = function(e){
   if(e.data.type==='loaded'){
       loadingOverlay.style.display = 'none'; // hide overlay when model is ready
     } else if(e.data.type==='result'){
-      const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-      const detectedLetter = labels[e.data.index];
+  console.log("Prediction index:", e.data.index);
 
-      if(detectedLetter !== lastLetter && !popupCooldown){
-        lastLetter = detectedLetter;
-        showPopup(detectedLetter);
-      }
+  const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+  const detectedLetter = labels[e.data.index];
+
+  console.log("Detected letter:", detectedLetter);
+
+  if(detectedLetter !== lastLetter && !popupCooldown){
+    lastLetter = detectedLetter;
+    showPopup(detectedLetter);
+  }
     }
   };
 
