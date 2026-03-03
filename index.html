@@ -35,12 +35,36 @@
       font-weight:bold;
       z-index:10;
     }
+
+#popup {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  background: rgba(0, 0, 0, 0.85);
+  color: #00FF00;
+  font-size: 5em;
+  font-weight: bold;
+  padding: 40px 60px;
+  border-radius: 20px;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  z-index: 20;
+  pointer-events: none;
+}
+
+#popup.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+    
   </style>
 </head>
 <body>
 
 <div id="loadingOverlay">Loading model...</div>
 <div id="letterOverlay"></div>
+<div id="popup"></div>
 <video id="input_video" autoplay playsinline></video>
 <canvas id="output_canvas"></canvas>
 
@@ -51,9 +75,12 @@ const canvasElement = document.getElementById('output_canvas');
 const canvasCtx = canvasElement.getContext('2d');
 const loadingOverlay = document.getElementById('loadingOverlay');
 const letterOverlay = document.getElementById('letterOverlay');
+const popup = document.getElementById('popup');
 
 let model; 
 let worker;
+let lastLetter = null;
+let popupCooldown = false;
 
 // Initialize everything
 async function init() {
@@ -90,8 +117,12 @@ async function init() {
   if(e.data.type==='loaded'){
     loadingOverlay.style.display = 'none'; // hide overlay when model is ready
   } else if(e.data.type==='result'){
-    const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-    letterOverlay.textContent = labels[e.data.index];
+  const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+  const detectedLetter = labels[e.data.index];
+
+  if(detectedLetter !== lastLetter && !popupCooldown){
+    lastLetter = detectedLetter;
+    showPopup(detectedLetter);
   }
 }
 
@@ -141,6 +172,21 @@ async function init() {
 }
 
 init();
+
+function showPopup(letter){
+  popup.textContent = letter;
+  popup.classList.add('show');
+  popupCooldown = true;
+
+  setTimeout(() => {
+    popup.classList.remove('show');
+  }, 1200);
+
+  setTimeout(() => {
+    popupCooldown = false;
+  }, 1500);
+} 
+  
 </script>
 
 </body>
