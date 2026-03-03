@@ -120,7 +120,7 @@ worker.onmessage = function(e){
 
   console.log("Detected letter:", detectedLetter);
 
-  if(detectedLetter !== lastLetter && !popupCooldown){
+  if(!popupCooldown){
     lastLetter = detectedLetter;
     showPopup(detectedLetter);
   }
