@@ -95,7 +95,9 @@ async function init() {
         model = await tf.loadLayersModel(inputData);
         postMessage({ type: 'loaded' });
       } else if(type === 'predict' && model) {
-        const input = tf.tensor([inputData]);
+        const input = tf.tensor(inputData)
+  .reshape([1, 21, 3, 1]);
+  
         const prediction = model.predict(input);
         const index = (await prediction.argMax(1).data())[0];
         input.dispose();
