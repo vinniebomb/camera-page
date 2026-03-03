@@ -35,29 +35,26 @@
       font-weight:bold;
       z-index:10;
     }
-
-#popup {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) scale(0.8);
-  background: rgba(0, 0, 0, 0.85);
-  color: #00FF00;
-  font-size: 5em;
-  font-weight: bold;
-  padding: 40px 60px;
-  border-radius: 20px;
-  opacity: 0;
-  transition: opacity 0.3s ease, transform 0.3s ease;
-  z-index: 20;
-  pointer-events: none;
-}
-
-#popup.show {
-  opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
-}
-    
+    #popup {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.8);
+      background: rgba(0, 0, 0, 0.85);
+      color: #00FF00;
+      font-size: 5em;
+      font-weight: bold;
+      padding: 40px 60px;
+      border-radius: 20px;
+      opacity: 0;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      z-index: 20;
+      pointer-events: none;
+    }
+    #popup.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
   </style>
 </head>
 <body>
@@ -69,7 +66,6 @@
 <canvas id="output_canvas"></canvas>
 
 <script>
-// ===== Main script =====
 const videoElement = document.getElementById('input_video');
 const canvasElement = document.getElementById('output_canvas');
 const canvasCtx = canvasElement.getContext('2d');
@@ -77,58 +73,57 @@ const loadingOverlay = document.getElementById('loadingOverlay');
 const letterOverlay = document.getElementById('letterOverlay');
 const popup = document.getElementById('popup');
 
-let model; 
 let worker;
 let lastLetter = null;
 let popupCooldown = false;
+let lastPredictionTime = 0;
+const predictionInterval = 200;
 
-// Initialize everything
+// ===== Initialize =====
 async function init() {
-
   // Start Web Worker for predictions
   const workerBlob = new Blob([`
     importScripts('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest');
     let model;
-    onmessage = async function(e) {
+    onmessage = async function(e){
       const { type, inputData } = e.data;
-      if(type === 'load') {
+      if(type === 'load'){
         model = await tf.loadLayersModel(inputData);
-        postMessage({ type: 'loaded' });
-      } else if(type === 'predict' && model) {
-        const input = tf.tensor(inputData)
-  .reshape([1, 21, 3, 1]);
-  
+        postMessage({ type:'loaded' });
+      } else if(type === 'predict' && model){
+        // Convert array back to tensor: [1,224,224,3]
+        const input = tf.tensor(inputData);
         const prediction = model.predict(input);
         const index = (await prediction.argMax(1).data())[0];
         input.dispose();
         prediction.dispose();
-        postMessage({ type: 'result', index });
+        postMessage({ type:'result', index });
       }
     }
   `], {type:'application/javascript'});
+
   worker = new Worker(URL.createObjectURL(workerBlob));
   worker.postMessage({
-  type: 'load',
-  inputData: 'https://vinniebomb.github.io/model-stuff-camera-hand/model.json'
-});
-worker.onmessage = function(e){
-  if(e.data.type==='loaded'){
-      loadingOverlay.style.display = 'none'; // hide overlay when model is ready
-    } else if(e.data.type==='result'){
-  console.log("Prediction index:", e.data.index);
+    type: 'load',
+    inputData: 'https://vinniebomb.github.io/model-stuff-camera-hand/model.json'
+  });
 
-  const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-  const detectedLetter = labels[e.data.index];
-
-  console.log("Detected letter:", detectedLetter);
-
-  if(!popupCooldown){
-    lastLetter = detectedLetter;
-    showPopup(detectedLetter);
-  }
+  worker.onmessage = function(e){
+    if(e.data.type === 'loaded'){
+      loadingOverlay.style.display = 'none';
+      console.log('Model loaded in worker!');
+    } else if(e.data.type === 'result'){
+      const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+      const detectedLetter = labels[e.data.index];
+      // Show popup only if letter changed
+      if(detectedLetter !== lastLetter && !popupCooldown){
+        lastLetter = detectedLetter;
+        showPopup(detectedLetter);
+      }
     }
   };
 
+  // ===== MediaPipe Hands =====
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
@@ -139,57 +134,54 @@ worker.onmessage = function(e){
     minTrackingConfidence: 0.7
   });
 
-  // Throttle predictions (~5 FPS)
-  let lastPredictionTime = 0;
-  const predictionInterval = 200;
-
   hands.onResults(results => {
     canvasCtx.save();
     canvasCtx.clearRect(0,0,canvasElement.width,canvasElement.height);
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
+    // Only predict if a hand is detected and throttle
     if(results.multiHandLandmarks){
+      const now = Date.now();
+      if(now - lastPredictionTime > predictionInterval){
+        lastPredictionTime = now;
+        // Capture the current video frame as 224x224 RGB
+        const imgTensor = tf.browser.fromPixels(videoElement)
+          .resizeNearestNeighbor([224,224])
+          .toFloat()
+          .expandDims(0);
+        worker.postMessage({ type:'predict', inputData: imgTensor.arraySync() });
+        imgTensor.dispose();
+      }
+
       for(const landmarks of results.multiHandLandmarks){
         drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color:'#00FF00', lineWidth:4 });
         drawLandmarks(canvasCtx, landmarks, { color:'#FF0000', lineWidth:2 });
-
-        const now = Date.now();
-        if(now - lastPredictionTime > predictionInterval){
-          lastPredictionTime = now;
-          const inputData = [];
-          for(const l of landmarks) inputData.push(l.x, l.y, l.z);
-          worker.postMessage({type:'predict', inputData});
-        }
       }
     }
 
     canvasCtx.restore();
   });
 
+  // ===== Camera =====
   const camera = new Camera(videoElement, {
     onFrame: async () => { await hands.send({image: videoElement}); },
-    width:1280,
-    height:720
+    width: 1280,
+    height: 720
   });
   camera.start();
 }
 
-init();
-
+// ===== Popup function =====
 function showPopup(letter){
   popup.textContent = letter;
   popup.classList.add('show');
   popupCooldown = true;
 
-  setTimeout(() => {
-    popup.classList.remove('show');
-  }, 1200);
+  setTimeout(() => { popup.classList.remove('show'); }, 1200);
+  setTimeout(() => { popupCooldown = false; }, 1500);
+}
 
-  setTimeout(() => {
-    popupCooldown = false;
-  }, 1500);
-} 
-  
+init();
 </script>
 
 </body>
