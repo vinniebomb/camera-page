@@ -84,10 +84,6 @@ let popupCooldown = false;
 
 // Initialize everything
 async function init() {
-  // Load TF model once
-  model = await tf.loadLayersModel('./model.json');
-  console.log("Model loaded!");
-  loadingOverlay.style.display = 'none';
 
   // Start Web Worker for predictions
   const workerBlob = new Blob([`
@@ -113,18 +109,19 @@ async function init() {
   type: 'load',
   inputData: 'https://vinniebomb.github.io/model-stuff-camera-hand/model.json'
 });
-  worker.onmessage = function(e){
+worker.onmessage = function(e){
   if(e.data.type==='loaded'){
-    loadingOverlay.style.display = 'none'; // hide overlay when model is ready
-  } else if(e.data.type==='result'){
-  const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-  const detectedLetter = labels[e.data.index];
+      loadingOverlay.style.display = 'none'; // hide overlay when model is ready
+    } else if(e.data.type==='result'){
+      const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+      const detectedLetter = labels[e.data.index];
 
-  if(detectedLetter !== lastLetter && !popupCooldown){
-    lastLetter = detectedLetter;
-    showPopup(detectedLetter);
-  }
-}
+      if(detectedLetter !== lastLetter && !popupCooldown){
+        lastLetter = detectedLetter;
+        showPopup(detectedLetter);
+      }
+    }
+  };
 
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
